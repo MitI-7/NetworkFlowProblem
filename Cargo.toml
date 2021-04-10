@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "src/network_flow/minimum_cost_flow/*",
+    "test/minimum_cost_flow/cost_scaling_push_relabel/",
+]

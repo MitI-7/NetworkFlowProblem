@@ -1,0 +1,8 @@
+[package]
+name = "verification-network_flow-minimum_cost_flow-cost_scaling_push_relabel"
+version = "0.0.0"
+edition = "2018"
+publish = false
+
+[dependencies]
+network_flow-minimum_cost_flow-cost_scaling_push_relabel = { path = "../../../src/network_flow/minimum_cost_flow/cost_scaling_push_relabel" }
