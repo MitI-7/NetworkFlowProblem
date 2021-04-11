@@ -1,4 +1,6 @@
 use std::collections::VecDeque;
+use push_relabel::LowerBound;
+use std::time::Instant;
 
 #[derive(PartialEq)]
 pub enum Status {
@@ -60,7 +62,7 @@ pub struct CostScalingPushRelabel {
     graph: Vec<Vec<Edge>>,
     active_nodes: VecDeque<usize>,
     gamma: i64,
-    d: Vec<(usize, usize)>,
+    pos: Vec<(usize, usize)>,
     current_edges: Vec<usize>,  // current candidate to test for admissibility
     alpha: i64,
     cost_scaling_factor: i64,
@@ -71,12 +73,17 @@ pub struct CostScalingPushRelabel {
 
     // settings
     check_feasibility: bool,
+
+    // debug
+    num_discharge: i64,
+    num_relabel: i64,
+    num_test: i64,
 }
 
 #[allow(dead_code)]
 impl CostScalingPushRelabel {
     pub fn new(num_of_nodes: usize) -> Self {
-        let alpha = 16;
+        let alpha = 5;
         assert!(alpha >= 2);
         CostScalingPushRelabel {
             num_of_nodes: num_of_nodes,
@@ -84,19 +91,24 @@ impl CostScalingPushRelabel {
             graph: vec![vec![]; num_of_nodes],
             active_nodes: VecDeque::new(),
             gamma: 0,
-            d: Vec::new(),
+            pos: Vec::new(),
             current_edges: vec![0; num_of_nodes],
             alpha: alpha,   // it was usually between 8 and 24
-            cost_scaling_factor: 1 + alpha * num_of_nodes as i64,
+            // cost_scaling_factor: 1 + alpha * num_of_nodes as i64,
+            cost_scaling_factor: 3 + num_of_nodes as i64,
 
             status: Status::NotSolved,
             optimal_cost: None,
 
             check_feasibility: true,
+
+            num_discharge: 0,
+            num_relabel: 0,
+            num_test: 0,
         }
     }
 
-    pub fn add_directed_edge(&mut self, from: usize, to: usize, lower: i64, upper: i64, cost: i64) {
+    pub fn add_directed_edge(&mut self, from: usize, to: usize, lower: i64, upper: i64, cost: i64) -> usize {
         assert!(lower <= upper);
 
         let e = self.graph[from].len();
@@ -114,12 +126,23 @@ impl CostScalingPushRelabel {
 
         self.gamma = i64::max(self.gamma, cost.abs());
 
-        self.d.push((from, e));
+        self.pos.push((from, e));
+        self.pos.len() - 1
     }
 
     pub fn get_directed_edge(&self, i: usize) -> Edge {
-        let (a, b) = self.d[i];
-        self.graph[a][b].clone()
+        let (a, b) = self.pos[i];
+        let e = &self.graph[a][b];
+        Edge {
+            from: e.from,
+            to: e.to,
+            rev: e.rev,
+            flow: e.flow,
+            lower: e.lower,
+            upper: e.upper,
+            cost: e.cost,
+            is_rev: e.is_rev,
+        }
     }
 
     pub fn add_supply(&mut self, node: usize, supply: i64) {
@@ -148,11 +171,25 @@ impl CostScalingPushRelabel {
 
         while {
             // do
+            eprintln!("epsilon: {}", epsilon);
             epsilon = i64::max(epsilon / self.alpha, 1);
+
+            let start = Instant::now();
             self.refine(epsilon);
+            let end = start.elapsed();
+            eprintln!("#time:{}.{:03}", end.as_secs(), end.subsec_nanos() / 1_000_000);
             // assert!(self.excess_is_valid());
             // assert!(self.is_feasible_flow());
             // assert!(self.is_epsilon_optimal(0, true));
+
+            // eprintln!("#relabel:{}", self.num_relabel);
+            // eprintln!("#discharge:{}", self.num_discharge);
+            // eprintln!("#edge_test_count:{}", self.num_test);
+            eprintln!();
+            self.num_relabel = 0;
+            self.num_discharge = 0;
+            self.num_test = 0;
+
 
             // while
             self.status != Status::Infeasible && epsilon != 1
@@ -207,9 +244,23 @@ impl CostScalingPushRelabel {
         total != 0
     }
 
-    // TODO
     fn is_infeasible(&self) -> bool {
-        false
+        let mut solver = LowerBound::new(self.num_of_nodes);
+
+        for u in 0..self.num_of_nodes {
+            for i in 0..self.graph[u].len() {
+                let edge = &self.graph[u][i];
+                if !edge.is_rev {
+                    solver.add_edge(edge.from, edge.to, edge.lower, edge.upper);
+                }
+            }
+        }
+
+        for u in 0..self.num_of_nodes {
+            solver.add_supply(u, self.nodes[u].b);
+        }
+        let status = solver.solve();
+        !status
     }
 
     fn initialize(&mut self) {
@@ -276,6 +327,8 @@ impl CostScalingPushRelabel {
     }
 
     fn discharge(&mut self, u: usize, epsilon: i64) {
+        self.num_discharge += 1;
+
         while self.status != Status::Infeasible && self.nodes[u].is_active() {
             self.push(u, epsilon);
             if self.nodes[u].is_active() {
@@ -313,6 +366,7 @@ impl CostScalingPushRelabel {
         assert!(self.nodes[u].is_active());
 
         for i in self.current_edges[u]..self.graph[u].len() {
+            self.num_test += 1;
             let edge = &self.graph[u][i];
             if edge.residual_capacity() <= 0 {
                 continue;
@@ -348,6 +402,7 @@ impl CostScalingPushRelabel {
 
     // uのpotentialを修正してadmissible edgeをふやす
     fn relabel(&mut self, u: usize, epsilon: i64) {
+        self.num_relabel += 1;
         let guaranteed_new_potential = self.nodes[u].potential - epsilon;
 
         let mut maxi_potential = i64::MIN;
@@ -355,6 +410,7 @@ impl CostScalingPushRelabel {
         let mut current_edges_for_u = 0;
 
         for i in 0..self.graph[u].len() {
+            self.num_test += 1;
             if self.graph[u][i].residual_capacity() <= 0 {
                 continue;
             }
@@ -410,6 +466,7 @@ impl CostScalingPushRelabel {
 
         // admissibleがあればok
         for i in self.current_edges[u]..self.graph[u].len() {
+            self.num_test += 1;
             if self.graph[u][i].residual_capacity() <= 0 {
                 continue;
             }
