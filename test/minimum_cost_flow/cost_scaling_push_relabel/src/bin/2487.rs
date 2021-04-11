@@ -67,7 +67,7 @@ fn main() {
         time_index_b.insert(time_b[i], base + i);
     }
 
-    let mut solver = CostScalingPushRelabel::<i64>::new(time_a.len() + time_b.len());
+    let mut solver = CostScalingPushRelabel::new(time_a.len() + time_b.len());
 
     // A
     for i in 0..time_a.len() - 1 {

@@ -10,3 +10,4 @@ name = "cost_scaling_push_relabel"
 [dependencies]
 num = "0.3.0"
 num-traits = "0.2.12"
+network_flow-feasible_flow-push_relabel = { path = "../../feasible_flow/push_relabel" }

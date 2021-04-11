@@ -6,14 +6,15 @@ use std::io::{BufRead, BufReader};
 
 fn main() {
     // let input_file = "/mnt/c/Users/sakuya/src/Algorithm/verification/network_flow/minimum_cost_flow/cost_scaling_push_relabel/src/bin/netgen_lo_8_16a.min";
-    // let input_file = "/mnt/c/Users/sakuya/src/Algorithm/verification/network_flow/minimum_cost_flow/cost_scaling_push_relabel/src/bin/netgen_sr_16a.min";
-    let input_file = "C:/Users/sakuya/src/Algorithm/verification/network_flow/minimum_cost_flow/cost_scaling_push_relabel/src/bin/hand.in";
+    let input_file = "C:/Users/sakuya/src/NetworkFlowProblem/test/minimum_cost_flow/test_data/netgen_sr_16a.min";
+    // let input_file = "C:/Users/sakuya/src/Algorithm/verification/network_flow/minimum_cost_flow/cost_scaling_push_relabel/src/bin/hand.in";
     // let input_file = "./netgen_sr_16a.min";
 
     let mut num_of_nodes = 0;
     let mut num_of_edges = 0;
 
     let mut solver = CostScalingPushRelabel::new(0);
+
     for result in BufReader::new(File::open(input_file).unwrap()).lines() {
         let line = result.unwrap();
         let v: Vec<&str> = line.split_whitespace().collect();
@@ -39,6 +40,7 @@ fn main() {
     }
     println!("#nodes:{} #edges:{}", num_of_nodes, num_of_edges);
 
+    solver.set_check_feasibility(false);
     let start = Instant::now();
 
     // solver.set_check_feasibility(false);
@@ -53,6 +55,6 @@ fn main() {
     }
 
     let end = start.elapsed();
-    println!("{}.{:03}秒経過しました。", end.as_secs(), end.subsec_nanos() / 1_000_000);
+    println!("time:{}.{:03}sec", end.as_secs(), end.subsec_nanos() / 1_000_000);
 
 }

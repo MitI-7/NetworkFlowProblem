@@ -5,4 +5,4 @@ edition = "2018"
 publish = false
 
 [dependencies]
-network_flow-minimum_cost_flow-cost_scaling_push_relabel = { path = "../../../src/network_flow/minimum_cost_flow/cost_scaling_push_relabel" }
+network_flow-minimum_cost_flow-cost_scaling_push_relabel = { path = "../../../src/minimum_cost_flow/cost_scaling_push_relabel" }
