@@ -92,7 +92,6 @@ impl<F: Flow> Edge<F> {
 
 #[derive(Clone)]
 struct InternalEdge<F: Flow> {
-    from: usize,
     to: usize,
     rev: usize, // 逆辺のindex. graph[to][rev]でアクセスできる
     flow: F,
@@ -103,8 +102,8 @@ struct InternalEdge<F: Flow> {
 }
 
 impl<F: Flow> InternalEdge<F> {
-    pub fn new(from: usize, to: usize, rev: usize, flow: F, lower: F, upper: F, cost: F, is_rev: bool) -> Self {
-        InternalEdge { from, to, rev, flow, lower, upper, cost, is_rev }
+    pub fn new(to: usize, rev: usize, flow: F, lower: F, upper: F, cost: F, is_rev: bool) -> Self {
+        InternalEdge { to, rev, flow, lower, upper, cost, is_rev }
     }
 
     pub fn residual_capacity(&self) -> F {
@@ -176,10 +175,10 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         let e = self.graph[from].len();
         let re = if from == to { e + 1 } else { self.graph[to].len() };
 
-        let e1 = InternalEdge::new(from, to, re, F::zero(), lower, upper, cost, false);
+        let e1 = InternalEdge::new(to, re, F::zero(), lower, upper, cost, false);
         self.graph[from].push(e1);
 
-        let e2 = InternalEdge::new(to, from, e, F::zero(), F::zero(), -lower, -cost, true);
+        let e2 = InternalEdge::new(from, e, F::zero(), F::zero(), -lower, -cost, true);
         self.graph[to].push(e2);
 
         if cost < F::zero() {
@@ -193,7 +192,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
 
     pub fn get_directed_edge(&self, edge_id: EdgeId) -> Edge<F> {
         let e = &self.graph[edge_id.0][edge_id.1];
-        Edge { from: e.from, to: e.to, flow: e.flow, lower: e.lower, upper: e.upper, cost: e.cost }
+        Edge { from: edge_id.0, to: e.to, flow: e.flow, lower: e.lower, upper: e.upper, cost: e.cost }
     }
 
     pub fn add_supply(&mut self, node: usize, supply: F) {
@@ -328,7 +327,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             for i in 0..self.graph[u].len() {
                 let edge = &self.graph[u][i];
                 if !edge.is_rev {
-                    solver.add_edge(edge.from, edge.to, F::to_i64(&edge.lower).unwrap(), F::to_i64(&edge.upper).unwrap());
+                    solver.add_edge(u, edge.to, F::to_i64(&edge.lower).unwrap(), F::to_i64(&edge.upper).unwrap());
                 }
             }
         }
@@ -362,7 +361,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
                     continue;
                 }
 
-                let reduced_cost = self.reduced_cost(&edge);
+                let reduced_cost = self.reduced_cost(u, &edge);
                 if reduced_cost < F::zero() {
                     // 流量を上界にする
                     let flow = edge.residual_capacity();
@@ -421,7 +420,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         }
 
         let to = self.graph[u][i].to;
-        let from = self.graph[u][i].from;
+        let from = u;
         let rev = self.graph[u][i].rev;
 
         self.graph[u][i].flow += flow;
@@ -430,12 +429,12 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         self.excess[to] += flow;
     }
 
-    fn reduced_cost(&self, edge: &InternalEdge<F>) -> F {
-        edge.cost + self.potentials[edge.from] - self.potentials[edge.to]
+    fn reduced_cost(&self, u: usize, edge: &InternalEdge<F>) -> F {
+        edge.cost + self.potentials[u] - self.potentials[edge.to]
     }
 
-    fn is_admissible(&self, edge: &InternalEdge<F>, _epsilon: F) -> bool {
-        self.reduced_cost(edge) < F::zero()
+    fn is_admissible(&self, u: usize, edge: &InternalEdge<F>, _epsilon: F) -> bool {
+        self.reduced_cost(u, edge) < F::zero()
     }
 
     fn is_active(&self, u: usize) -> bool {
@@ -453,11 +452,11 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
                 continue;
             }
 
-            if self.is_admissible(&edge, epsilon) {
+            if self.is_admissible(u, &edge, epsilon) {
                 let to = edge.to;
 
                 if !self.look_ahead(to, epsilon) {
-                    if !self.is_admissible(&self.graph[u][i], epsilon) {
+                    if !self.is_admissible(u, &self.graph[u][i], epsilon) {
                         continue;
                     }
                 }
@@ -551,7 +550,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
                 continue;
             }
 
-            if self.is_admissible(&self.graph[u][i], epsilon) {
+            if self.is_admissible(u, &self.graph[u][i], epsilon) {
                 self.current_edges[u] = i;
                 return true;
             }
@@ -643,7 +642,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
                     continue;
                 }
 
-                let reduced_cost = self.reduced_cost(edge);
+                let reduced_cost = self.reduced_cost(u, edge);
                 if reduced_cost > epsilon {
                     if edge.flow != edge.lower {
                         return false;
@@ -673,7 +672,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
                     if edge.flow < edge.lower || edge.flow > edge.upper {
                         return false;
                     }
-                    e[edge.from] += edge.flow;
+                    e[u] += edge.flow;
                     e[edge.to] -= edge.flow;
                 }
             }
