@@ -273,9 +273,22 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             return Status::Infeasible;
         }
 
-        let mut epsilon = i64::max(1, self.gamma * self.cost_scaling_factor);
+        let mut epsilon;
+        match self.gamma.checked_mul(&self.cost_scaling_factor) {
+            Some(p) => {
+                epsilon = F::max(F::one(), p)
+            }
+            None => {
+                self.status = Status::BadCostRange;
+                return Status::BadCostRange
+            }
+        }
 
         self.scale_cost();
+        if self.status == Status::BadCostRange {
+            self.status = Status::BadCostRange;
+            return Status::BadCostRange
+        }
 
         self.initialize();
 
@@ -333,7 +346,16 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
     fn scale_cost(&mut self) {
         for u in 0..self.num_of_nodes {
             for edge in self.graph[u].iter_mut() {
-                edge.cost *= self.cost_scaling_factor;
+                match edge.cost.checked_mul(&self.cost_scaling_factor) {
+                    Some(p) => {
+                        edge.cost = p;
+                    },
+                    None => {
+                        self.status = Status::BadCostRange;
+                        return;
+                    },
+                }
+
             }
         }
     }
