@@ -17,12 +17,12 @@ pub enum Status {
 pub struct Edge {
     pub from: usize,
     pub to: usize,
-    rev: usize,     // 逆辺のindex. graph[to][rev]でアクセスできる
+    pub rev: usize,     // 逆辺のindex. graph[to][rev]でアクセスできる
     pub flow: i64,
-    lower: i64,
-    upper: i64,
-    cost: i64,
-    is_rev: bool,   // 逆辺かどうか
+    pub lower: i64,
+    pub upper: i64,
+    pub cost: i64,
+    pub is_rev: bool,   // 逆辺かどうか
 }
 
 impl Edge {
