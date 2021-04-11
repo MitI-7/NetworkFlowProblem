@@ -14,24 +14,6 @@ pub enum Status {
 }
 
 #[derive(Clone)]
-#[derive(Debug)]
-struct Node {
-    b: i64,
-    excess: i64,
-    potential: i64,
-}
-
-impl Node {
-    pub fn new() -> Self {
-        Node { b: 0, excess: 0, potential: 0 }
-    }
-
-    pub fn is_active(&self) -> bool {
-        self.excess > 0
-    }
-}
-
-#[derive(Clone)]
 pub struct Edge {
     pub from: usize,
     pub to: usize,
@@ -58,7 +40,6 @@ impl Edge {
 
 pub struct CostScalingPushRelabel {
     num_of_nodes: usize,
-    nodes: Vec<Node>,
     graph: Vec<Vec<Edge>>,
     active_nodes: VecDeque<usize>,
     gamma: i64,
@@ -66,6 +47,11 @@ pub struct CostScalingPushRelabel {
     current_edges: Vec<usize>,  // current candidate to test for admissibility
     alpha: i64,
     cost_scaling_factor: i64,
+
+    // Node
+    initial_excess: Vec<i64>,
+    excess: Vec<i64>,
+    potentials: Vec<i64>,
 
     // status
     status: Status,
@@ -87,7 +73,6 @@ impl CostScalingPushRelabel {
         assert!(alpha >= 2);
         CostScalingPushRelabel {
             num_of_nodes: num_of_nodes,
-            nodes: vec![Node::new(); num_of_nodes],
             graph: vec![vec![]; num_of_nodes],
             active_nodes: VecDeque::new(),
             gamma: 0,
@@ -96,6 +81,11 @@ impl CostScalingPushRelabel {
             alpha: alpha,   // it was usually between 8 and 24
             // cost_scaling_factor: 1 + alpha * num_of_nodes as i64,
             cost_scaling_factor: 3 + num_of_nodes as i64,
+
+            // Node
+            initial_excess: vec![0; num_of_nodes],
+            excess: vec![0; num_of_nodes],
+            potentials: vec![0; num_of_nodes],
 
             status: Status::NotSolved,
             optimal_cost: None,
@@ -146,8 +136,8 @@ impl CostScalingPushRelabel {
     }
 
     pub fn add_supply(&mut self, node: usize, supply: i64) {
-        self.nodes[node].b += supply;
-        self.nodes[node].excess += supply;
+        self.initial_excess[node] += supply;
+        self.excess[node] += supply;
     }
 
     pub fn set_check_feasibility(&mut self, check: bool) {
@@ -239,7 +229,7 @@ impl CostScalingPushRelabel {
     fn is_unbalanced(&self) -> bool {
         let mut total = 0;
         for u in 0..self.num_of_nodes {
-            total += self.nodes[u].b;
+            total += self.initial_excess[u];
         }
         total != 0
     }
@@ -257,7 +247,7 @@ impl CostScalingPushRelabel {
         }
 
         for u in 0..self.num_of_nodes {
-            solver.add_supply(u, self.nodes[u].b);
+            solver.add_supply(u, self.initial_excess[u]);
         }
         let status = solver.solve();
         !status
@@ -310,8 +300,8 @@ impl CostScalingPushRelabel {
         }
 
         assert_eq!(self.active_nodes.len(), 0);
-        for u in 0..self.nodes.len() {
-            if self.nodes[u].is_active() {
+        for u in 0..self.num_of_nodes {
+            if self.is_active(u) {
                 self.active_nodes.push_back(u);
             }
         }
@@ -329,9 +319,9 @@ impl CostScalingPushRelabel {
     fn discharge(&mut self, u: usize, epsilon: i64) {
         self.num_discharge += 1;
 
-        while self.status != Status::Infeasible && self.nodes[u].is_active() {
+        while self.status != Status::Infeasible && self.is_active(u) {
             self.push(u, epsilon);
-            if self.nodes[u].is_active() {
+            if self.is_active(u) {
                 assert_eq!(self.current_edges[u], self.graph[u].len());
                 self.relabel(u, epsilon);
             }
@@ -349,21 +339,25 @@ impl CostScalingPushRelabel {
 
         self.graph[u][i].flow += flow;
         self.graph[to][rev].flow -= flow;
-        self.nodes[from].excess -= flow;
-        self.nodes[to].excess += flow;
+        self.excess[from] -= flow;
+        self.excess[to] += flow;
     }
 
     fn reduced_cost(&self, edge: &Edge) -> i64 {
-        edge.cost + self.nodes[edge.from].potential - self.nodes[edge.to].potential
+        edge.cost + self.potentials[edge.from] - self.potentials[edge.to]
     }
 
     fn is_admissible(&self, edge: &Edge, _epsilon: i64) -> bool {
         self.reduced_cost(edge) < 0
     }
 
+    fn is_active(&self, u: usize) -> bool {
+        self.excess[u] > 0
+    }
+
     // uから隣接ノードにpushする
     fn push(&mut self, u: usize, epsilon: i64) {
-        assert!(self.nodes[u].is_active());
+        assert!(self.is_active(u));
 
         for i in self.current_edges[u]..self.graph[u].len() {
             self.num_test += 1;
@@ -381,15 +375,15 @@ impl CostScalingPushRelabel {
                     }
                 }
 
-                let flow = i64::min(self.graph[u][i].residual_capacity(), self.nodes[u].excess);
+                let flow = i64::min(self.graph[u][i].residual_capacity(), self.excess[u]);
                 self.push_flow(u, i, flow);
 
                 // toが新たにactiveになった
-                if self.nodes[to].excess > 0 && self.nodes[to].excess <= flow {
+                if self.is_active(to) && self.excess[to] <= flow {
                     self.active_nodes.push_back(to);
                 }
 
-                if !self.nodes[u].is_active() {
+                if !self.is_active(u) {
                     self.current_edges[u] = i;
                     return;
                 }
@@ -403,7 +397,7 @@ impl CostScalingPushRelabel {
     // uのpotentialを修正してadmissible edgeをふやす
     fn relabel(&mut self, u: usize, epsilon: i64) {
         self.num_relabel += 1;
-        let guaranteed_new_potential = self.nodes[u].potential - epsilon;
+        let guaranteed_new_potential = self.potentials[u] - epsilon;
 
         let mut maxi_potential = i64::MIN;
         let mut previous_maxi_potential = i64::MIN;
@@ -418,12 +412,12 @@ impl CostScalingPushRelabel {
             let cost = self.graph[u][i].cost;
 
             // (u->to)のreduced_cost(= cost + potential[u] - potential[to])を0にするpotential
-            let new_potential = self.nodes[to].potential - cost;
+            let new_potential = self.potentials[to] - cost;
             if new_potential > maxi_potential {
 
                 // epsilon引いただけでadmissible edgeができる
                 if new_potential > guaranteed_new_potential {
-                    self.nodes[u].potential = guaranteed_new_potential;
+                    self.potentials[u] = guaranteed_new_potential;
                     self.current_edges[u] = i;
                     return;
                 }
@@ -436,12 +430,12 @@ impl CostScalingPushRelabel {
 
         // ポテンシャルをさげてもadmissible edgeをつくることができない
         if maxi_potential == i64::MIN {
-            if self.nodes[u].excess != 0 {
+            if self.excess[u] != 0 {
                 self.status = Status::Infeasible;
                 return;
             } else {
                 // すきなだけpotentialをさげることができるが，とりあえずguaranteed_new_potentialをいれておく
-                self.nodes[u].potential = guaranteed_new_potential;
+                self.potentials[u] = guaranteed_new_potential;
                 self.current_edges[u] = 0;
             }
             return;
@@ -449,7 +443,7 @@ impl CostScalingPushRelabel {
 
         // epsilonさげただけじゃだめだけどもっとさげればadmissible edgeを作れる
         let new_potential = maxi_potential - epsilon;
-        self.nodes[u].potential = new_potential;
+        self.potentials[u] = new_potential;
 
         if previous_maxi_potential <= new_potential {
             // previous_maxi_potentialをつくったedgeからみればいい
@@ -460,7 +454,7 @@ impl CostScalingPushRelabel {
     }
 
     fn look_ahead(&mut self, u: usize, epsilon: i64) -> bool {
-        if self.nodes[u].excess < 0 {
+        if self.excess[u] < 0 {
             return true;
         }
 
@@ -509,7 +503,7 @@ impl CostScalingPushRelabel {
     fn print_excess(&self) {
         print!("excess: ");
         for u in 0..self.num_of_nodes {
-            print!("{} ", self.nodes[u].excess);
+            print!("{} ", self.excess[u]);
         }
         println!();
     }
@@ -517,7 +511,7 @@ impl CostScalingPushRelabel {
     fn print_potential(&self) {
         print!("potential: ");
         for u in 0..self.num_of_nodes {
-            print!("{} ", self.nodes[u].potential);
+            print!("{} ", self.potentials[u]);
         }
         println!();
     }
@@ -533,19 +527,19 @@ impl CostScalingPushRelabel {
     }
 
     fn excess_is_valid(&self) -> bool {
-        let mut excess = vec![0; self.num_of_nodes];
+        let mut e = vec![0; self.num_of_nodes];
         for u in 0..self.num_of_nodes {
-            excess[u] += self.nodes[u].b;
-            for e in &self.graph[u] {
-                if !e.is_rev {
-                    excess[u] -= e.flow;
-                    excess[e.to] += e.flow;
+            e[u] += self.initial_excess[u];
+            for edge in &self.graph[u] {
+                if !edge.is_rev {
+                    e[u] -= edge.flow;
+                    e[edge.to] += edge.flow;
                 }
             }
         }
 
         for u in 0..self.num_of_nodes {
-            if self.nodes[u].excess != excess[u] {
+            if self.excess[u] != e[u] {
                 return false;
             }
         }
@@ -601,7 +595,7 @@ impl CostScalingPushRelabel {
 
         // check flow conservation constraint
         for u in 0..self.num_of_nodes {
-            if self.nodes[u].b != e[u] {
+            if self.initial_excess[u] != e[u] {
                 return false;
             }
         }
