@@ -119,8 +119,6 @@ pub struct CostScalingPushRelabel<F: Flow> {
     gamma: F,
     pos: Vec<(usize, usize)>,
     current_edges: Vec<usize>,  // current candidate to test for admissibility
-    alpha: F,
-    cost_scaling_factor: F,
 
     // Node
     initial_excess: Vec<F>,
@@ -132,6 +130,8 @@ pub struct CostScalingPushRelabel<F: Flow> {
     optimal_cost: Option<i128>,
 
     // settings
+    alpha: F,
+    cost_scaling_factor: F,
     check_feasibility: bool,
 
     // debug
@@ -150,9 +150,6 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             gamma: F::zero(),
             pos: Vec::new(),
             current_edges: vec![0; num_of_nodes],
-            alpha: F::from_i32(5).unwrap(),
-            // cost_scaling_factor: 1 + alpha * num_of_nodes as i64,
-            cost_scaling_factor: F::from_i64(3 + num_of_nodes as i64).unwrap(),
 
             // Node
             initial_excess: vec![F::zero(); num_of_nodes],
@@ -162,6 +159,9 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             status: Status::NotSolved,
             optimal_cost: None,
 
+            alpha: F::from_i32(5).unwrap(),
+            // cost_scaling_factor: 1 + alpha * num_of_nodes as i64,
+            cost_scaling_factor: F::from_i64(3 + num_of_nodes as i64).unwrap(),
             check_feasibility: true,
 
             num_discharge: 0,
@@ -172,6 +172,8 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
 
     pub fn add_directed_edge(&mut self, from: usize, to: usize, lower: F, upper: F, cost: F) -> usize {
         assert!(lower <= upper);
+        assert!(from < self.num_of_nodes);
+        assert!(to < self.num_of_nodes);
 
         let e = self.graph[from].len();
         let re = if from == to {
