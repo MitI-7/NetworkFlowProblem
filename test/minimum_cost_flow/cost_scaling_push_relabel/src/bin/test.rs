@@ -13,7 +13,7 @@ fn main() {
     let mut num_of_nodes = 0;
     let mut num_of_edges = 0;
 
-    let mut solver = CostScalingPushRelabel::new(0);
+    let mut solver: CostScalingPushRelabel<i32> = CostScalingPushRelabel::new(0);
 
     for result in BufReader::new(File::open(input_file).unwrap()).lines() {
         let line = result.unwrap();
@@ -25,15 +25,15 @@ fn main() {
         }
         if v[0] == "n" {
             let u: usize = v[1].parse().unwrap();
-            let s: i64 = v[2].parse().unwrap();
+            let s: i32 = v[2].parse().unwrap();
             solver.add_supply(u - 1, s);
         }
         if v[0] == "a" {
             let f: usize = v[1].parse().unwrap();
             let t: usize = v[2].parse().unwrap();
-            let l: i64 = v[3].parse().unwrap();
-            let u: i64 = v[4].parse().unwrap();
-            let c: i64 = v[5].parse().unwrap();
+            let l: i32 = v[3].parse().unwrap();
+            let u: i32 = v[4].parse().unwrap();
+            let c: i32 = v[5].parse().unwrap();
 
             solver.add_directed_edge(f - 1, t - 1, l, u, c);
         }

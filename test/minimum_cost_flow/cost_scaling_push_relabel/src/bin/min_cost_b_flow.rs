@@ -20,16 +20,18 @@ fn read<T: FromStr>() -> T {
 fn main() {
     let (n, m) = (read(), read());
 
-    let mut solver = CostScalingPushRelabel::new(n);
+    let mut solver: CostScalingPushRelabel<i64> = CostScalingPushRelabel::new(n);
 
     for u in 0..n {
         let b = read();
         solver.add_supply(u, b);
     }
 
+    let mut edges = Vec::new();
     for _i in 0..m {
         let (s, t, l, u, c) = (read(), read(), read(), read(), read());
-        solver.add_directed_edge(s, t, l, u, c);
+        let edge_id = solver.add_directed_edge(s, t, l, u, c);
+        edges.push(edge_id);
     }
 
     let status = solver.solve();
@@ -40,8 +42,8 @@ fn main() {
             for u in 0..n {
                 println!("{}", p[u]);
             }
-            for i in 0..m {
-                println!("{}", solver.get_directed_edge(i).flow);
+            for edge_id in &edges {
+                println!("{}", solver.get_directed_edge(*edge_id).flow);
             }
         }
         _ => {

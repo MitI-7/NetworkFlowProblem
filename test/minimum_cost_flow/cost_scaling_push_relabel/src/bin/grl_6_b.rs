@@ -19,7 +19,7 @@ fn read<T: FromStr>() -> T {
 fn main() {
     let (v, e, f) = (read(), read(), read());
 
-    let mut solver = CostScalingPushRelabel::new(v);
+    let mut solver: CostScalingPushRelabel<i32> = CostScalingPushRelabel::new(v);
     for _edge in 0..e {
         let (u, v, c, d) = (read(), read(), read(), read());
         solver.add_directed_edge(u, v, 0, c, d);

@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 use push_relabel::LowerBound;
 use std::time::Instant;
 use std::fmt::{Display, Debug};
-use num_traits::NumCast;
 use num::{ToPrimitive, FromPrimitive, CheckedMul};
 use num_traits::{NumAssign};
 
@@ -87,6 +86,10 @@ pub enum Status {
     BadCostRange,
 }
 
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
+pub struct EdgeId(usize, usize);
+
+
 #[derive(Clone)]
 pub struct Edge<F: Flow> {
     pub from: usize,
@@ -117,7 +120,6 @@ pub struct CostScalingPushRelabel<F: Flow> {
     graph: Vec<Vec<Edge<F>>>,
     active_nodes: VecDeque<usize>,
     gamma: F,
-    pos: Vec<(usize, usize)>,
     current_edges: Vec<usize>,  // current candidate to test for admissibility
 
     // Node
@@ -148,7 +150,6 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             graph: vec![vec![]; num_of_nodes],
             active_nodes: VecDeque::new(),
             gamma: F::zero(),
-            pos: Vec::new(),
             current_edges: vec![0; num_of_nodes],
 
             // Node
@@ -170,7 +171,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         }
     }
 
-    pub fn add_directed_edge(&mut self, from: usize, to: usize, lower: F, upper: F, cost: F) -> usize {
+    pub fn add_directed_edge(&mut self, from: usize, to: usize, lower: F, upper: F, cost: F) -> EdgeId {
         assert!(lower <= upper);
         assert!(from < self.num_of_nodes);
         assert!(to < self.num_of_nodes);
@@ -194,13 +195,11 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             self.gamma = F::max(self.gamma, cost);
         }
 
-        self.pos.push((from, e));
-        self.pos.len() - 1
+        EdgeId(from, e)
     }
 
-    pub fn get_directed_edge(&self, i: usize) -> Edge<F> {
-        let (a, b) = self.pos[i];
-        let e = &self.graph[a][b];
+    pub fn get_directed_edge(&self, edge_id: EdgeId) -> Edge<F> {
+        let e = &self.graph[edge_id.0][edge_id.1];
         Edge {
             from: e.from,
             to: e.to,

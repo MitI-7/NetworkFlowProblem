@@ -28,11 +28,13 @@ fn main() {
         }
     }
 
-    let mut solver = CostScalingPushRelabel::new(2 * n);
+    let mut solver: CostScalingPushRelabel<i64> = CostScalingPushRelabel::new(2 * n);
 
+    let mut edges = Vec::new();
     for i in 0..n {
         for j in 0..n {
-            solver.add_directed_edge(i, n + j, 0, 1, A[i][j]);
+            let edge_id = solver.add_directed_edge(i, n + j, 0, 1, A[i][j]);
+            edges.push(edge_id);
         }
     }
 
@@ -45,9 +47,9 @@ fn main() {
     assert!(status == Status::Optimal);
 
     let mut p = vec![0; n];
-    for i in 0..n * n {
-        if solver.get_directed_edge(i).flow == 1 {
-            p[solver.get_directed_edge(i).from] = solver.get_directed_edge(i).to - n;
+    for edge_id in &edges {
+        if solver.get_directed_edge(*edge_id).flow == 1 {
+            p[solver.get_directed_edge(*edge_id).from] = solver.get_directed_edge(*edge_id).to - n;
         }
     }
     println!("{}", solver.optimal_cost().unwrap_or(0));
