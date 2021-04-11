@@ -75,21 +75,36 @@ pub enum Status {
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct EdgeId(usize, usize);
 
-#[derive(Clone)]
 pub struct Edge<F: Flow> {
     pub from: usize,
     pub to: usize,
-    pub rev: usize, // 逆辺のindex. graph[to][rev]でアクセスできる
     pub flow: F,
     pub lower: F,
     pub upper: F,
     pub cost: F,
-    pub is_rev: bool, // 逆辺かどうか
 }
 
 impl<F: Flow> Edge<F> {
+    pub fn new(from: usize, to: usize, flow: F, lower: F, upper: F, cost: F) -> Self {
+        Edge { from, to, flow, lower, upper, cost }
+    }
+}
+
+#[derive(Clone)]
+struct InternalEdge<F: Flow> {
+    from: usize,
+    to: usize,
+    rev: usize, // 逆辺のindex. graph[to][rev]でアクセスできる
+    flow: F,
+    lower: F,
+    upper: F,
+    cost: F,
+    is_rev: bool, // 逆辺かどうか
+}
+
+impl<F: Flow> InternalEdge<F> {
     pub fn new(from: usize, to: usize, rev: usize, flow: F, lower: F, upper: F, cost: F, is_rev: bool) -> Self {
-        Edge { from, to, rev, flow, lower, upper, cost, is_rev }
+        InternalEdge { from, to, rev, flow, lower, upper, cost, is_rev }
     }
 
     pub fn residual_capacity(&self) -> F {
@@ -99,7 +114,7 @@ impl<F: Flow> Edge<F> {
 
 pub struct CostScalingPushRelabel<F: Flow> {
     num_of_nodes: usize,
-    graph: Vec<Vec<Edge<F>>>,
+    graph: Vec<Vec<InternalEdge<F>>>,
     active_nodes: VecDeque<usize>,
     gamma: F,
     current_edges: Vec<usize>, // current candidate to test for admissibility
@@ -161,10 +176,10 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         let e = self.graph[from].len();
         let re = if from == to { e + 1 } else { self.graph[to].len() };
 
-        let e1 = Edge::new(from, to, re, F::zero(), lower, upper, cost, false);
+        let e1 = InternalEdge::new(from, to, re, F::zero(), lower, upper, cost, false);
         self.graph[from].push(e1);
 
-        let e2 = Edge::new(to, from, e, F::zero(), F::zero(), -lower, -cost, true);
+        let e2 = InternalEdge::new(to, from, e, F::zero(), F::zero(), -lower, -cost, true);
         self.graph[to].push(e2);
 
         if cost < F::zero() {
@@ -178,7 +193,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
 
     pub fn get_directed_edge(&self, edge_id: EdgeId) -> Edge<F> {
         let e = &self.graph[edge_id.0][edge_id.1];
-        Edge { from: e.from, to: e.to, rev: e.rev, flow: e.flow, lower: e.lower, upper: e.upper, cost: e.cost, is_rev: e.is_rev }
+        Edge { from: e.from, to: e.to, flow: e.flow, lower: e.lower, upper: e.upper, cost: e.cost }
     }
 
     pub fn add_supply(&mut self, node: usize, supply: F) {
@@ -415,11 +430,11 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         self.excess[to] += flow;
     }
 
-    fn reduced_cost(&self, edge: &Edge<F>) -> F {
+    fn reduced_cost(&self, edge: &InternalEdge<F>) -> F {
         edge.cost + self.potentials[edge.from] - self.potentials[edge.to]
     }
 
-    fn is_admissible(&self, edge: &Edge<F>, _epsilon: F) -> bool {
+    fn is_admissible(&self, edge: &InternalEdge<F>, _epsilon: F) -> bool {
         self.reduced_cost(edge) < F::zero()
     }
 
