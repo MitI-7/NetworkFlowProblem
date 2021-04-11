@@ -1,24 +1,11 @@
-use std::collections::VecDeque;
+use num::{CheckedMul, FromPrimitive, ToPrimitive};
+use num_traits::NumAssign;
 use push_relabel::LowerBound;
+use std::collections::VecDeque;
+use std::fmt::{Debug, Display};
 use std::time::Instant;
-use std::fmt::{Display, Debug};
-use num::{ToPrimitive, FromPrimitive, CheckedMul};
-use num_traits::{NumAssign};
 
-pub trait Flow:
-'static
-+ Copy
-+ Ord
-+ Display
-+ Debug
-+ BoundedBelow
-+ BoundedAbove
-+ FromPrimitive
-+ ToPrimitive
-+ NumAssign
-+ CheckedMul
-{
-}
+pub trait Flow: 'static + Copy + Ord + Display + Debug + BoundedBelow + BoundedAbove + FromPrimitive + ToPrimitive + NumAssign + CheckedMul {}
 
 pub trait Zero {
     fn zero() -> Self;
@@ -74,7 +61,6 @@ macro_rules! impl_integral {
 
 impl_integral!(i8, i16, i32, i64, i128);
 
-
 #[derive(PartialEq)]
 pub enum Status {
     NotSolved,
@@ -89,24 +75,21 @@ pub enum Status {
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct EdgeId(usize, usize);
 
-
 #[derive(Clone)]
 pub struct Edge<F: Flow> {
     pub from: usize,
     pub to: usize,
-    pub rev: usize,     // 逆辺のindex. graph[to][rev]でアクセスできる
+    pub rev: usize, // 逆辺のindex. graph[to][rev]でアクセスできる
     pub flow: F,
     pub lower: F,
     pub upper: F,
     pub cost: F,
-    pub is_rev: bool,   // 逆辺かどうか
+    pub is_rev: bool, // 逆辺かどうか
 }
 
 impl<F: Flow> Edge<F> {
     pub fn new(from: usize, to: usize, rev: usize, flow: F, lower: F, upper: F, cost: F, is_rev: bool) -> Self {
-        Edge {
-            from, to, rev, flow, lower, upper, cost, is_rev
-        }
+        Edge { from, to, rev, flow, lower, upper, cost, is_rev }
     }
 
     pub fn residual_capacity(&self) -> F {
@@ -114,13 +97,12 @@ impl<F: Flow> Edge<F> {
     }
 }
 
-
 pub struct CostScalingPushRelabel<F: Flow> {
     num_of_nodes: usize,
     graph: Vec<Vec<Edge<F>>>,
     active_nodes: VecDeque<usize>,
     gamma: F,
-    current_edges: Vec<usize>,  // current candidate to test for admissibility
+    current_edges: Vec<usize>, // current candidate to test for admissibility
 
     // Node
     initial_excess: Vec<F>,
@@ -177,11 +159,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         assert!(to < self.num_of_nodes);
 
         let e = self.graph[from].len();
-        let re = if from == to {
-            e + 1
-        } else {
-            self.graph[to].len()
-        };
+        let re = if from == to { e + 1 } else { self.graph[to].len() };
 
         let e1 = Edge::new(from, to, re, F::zero(), lower, upper, cost, false);
         self.graph[from].push(e1);
@@ -200,16 +178,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
 
     pub fn get_directed_edge(&self, edge_id: EdgeId) -> Edge<F> {
         let e = &self.graph[edge_id.0][edge_id.1];
-        Edge {
-            from: e.from,
-            to: e.to,
-            rev: e.rev,
-            flow: e.flow,
-            lower: e.lower,
-            upper: e.upper,
-            cost: e.cost,
-            is_rev: e.is_rev,
-        }
+        Edge { from: e.from, to: e.to, rev: e.rev, flow: e.flow, lower: e.lower, upper: e.upper, cost: e.cost, is_rev: e.is_rev }
     }
 
     pub fn add_supply(&mut self, node: usize, supply: F) {
@@ -240,19 +209,17 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
 
         let mut epsilon;
         match self.gamma.checked_mul(&self.cost_scaling_factor) {
-            Some(p) => {
-                epsilon = F::max(F::one(), p)
-            }
+            Some(p) => epsilon = F::max(F::one(), p),
             None => {
                 self.status = Status::BadCostRange;
-                return Status::BadCostRange
+                return Status::BadCostRange;
             }
         }
 
         self.scale_cost();
         if self.status == Status::BadCostRange {
             self.status = Status::BadCostRange;
-            return Status::BadCostRange
+            return Status::BadCostRange;
         }
 
         self.initialize();
@@ -277,7 +244,6 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             self.num_relabel = 0;
             self.num_discharge = 0;
             self.num_test = 0;
-
 
             // while
             self.status != Status::Infeasible && epsilon != F::one()
@@ -314,13 +280,12 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
                 match edge.cost.checked_mul(&self.cost_scaling_factor) {
                     Some(p) => {
                         edge.cost = p;
-                    },
+                    }
                     None => {
                         self.status = Status::BadCostRange;
                         return;
-                    },
+                    }
                 }
-
             }
         }
     }
@@ -389,14 +354,14 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
                     if flow != F::zero() {
                         self.push_flow(u, i, flow);
                     }
-                    // assert_eq!(self.graph[u][i].flow, self.graph[u][i].upper);
+                    assert_eq!(self.graph[u][i].flow, self.graph[u][i].upper);
                 } else if reduced_cost > F::zero() {
                     // 流量を下界にする
                     let flow = edge.lower - edge.flow;
                     if flow != F::zero() {
                         self.push_flow(u, i, flow);
                     }
-                    // assert_eq!(self.graph[u][i].flow, self.graph[u][i].lower);
+                    assert_eq!(self.graph[u][i].flow, self.graph[u][i].lower);
                 }
             }
         }
@@ -521,7 +486,6 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             // (u->to)のreduced_cost(= cost + potential[u] - potential[to])を0にするpotential
             let new_potential = self.potentials[to] - cost;
             if new_potential > maxi_potential {
-
                 // epsilon引いただけでadmissible edgeができる
                 if new_potential > guaranteed_new_potential {
                     self.potentials[u] = guaranteed_new_potential;
