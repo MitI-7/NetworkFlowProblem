@@ -1,57 +1,17 @@
 use std::collections::VecDeque;
 use push_relabel::LowerBound;
 use std::time::Instant;
-use std::fmt::Display;
+use std::fmt::{Display, Debug};
 use num_traits::NumCast;
-use num::{ToPrimitive, FromPrimitive};
+use num::{ToPrimitive, FromPrimitive, CheckedMul};
 use num_traits::{NumAssign};
-use std::{
-    fmt,
-    iter::{Product, Sum},
-    ops::{
-        Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Div,
-        DivAssign, Mul, MulAssign, Not, Rem, RemAssign, Shl, ShlAssign, Shr, ShrAssign, Sub,
-        SubAssign,
-    },
-};
-use num::CheckedMul;
-
 
 pub trait Flow:
 'static
-// + Send
-// + Sync
 + Copy
 + Ord
-+ Not<Output = Self>
-// + Add<Output = Self>
-// + Sub<Output = Self>
-// + Mul<Output = Self>
-// + Div<Output = Self>
-// + Rem<Output = Self>
-// + AddAssign
-// + SubAssign
-// + MulAssign
-// + DivAssign
-// + RemAssign
-// + Sum
-+ Product
-// + BitOr<Output = Self>
-// + BitAnd<Output = Self>
-// + BitXor<Output = Self>
-// + BitOrAssign
-// + BitAndAssign
-// + BitXorAssign
-+ Shl<Output = Self>
-+ Shr<Output = Self>
-+ ShlAssign
-+ ShrAssign
-+ fmt::Display
-// + fmt::Debug
-// + fmt::Binary
-// + fmt::Octal
-// + Zero
-// + One
++ Display
++ Debug
 + BoundedBelow
 + BoundedAbove
 + FromPrimitive
@@ -183,8 +143,6 @@ pub struct CostScalingPushRelabel<F: Flow> {
 #[allow(dead_code)]
 impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
     pub fn new(num_of_nodes: usize) -> Self {
-        let alpha = F::from_i32(5).unwrap();
-        // assert!(alpha >= 2);
         CostScalingPushRelabel {
             num_of_nodes: num_of_nodes,
             graph: vec![vec![]; num_of_nodes],
@@ -192,7 +150,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             gamma: F::zero(),
             pos: Vec::new(),
             current_edges: vec![0; num_of_nodes],
-            alpha: alpha,   // it was usually between 8 and 24
+            alpha: F::from_i32(5).unwrap(),
             // cost_scaling_factor: 1 + alpha * num_of_nodes as i64,
             cost_scaling_factor: F::from_i64(3 + num_of_nodes as i64).unwrap(),
 
@@ -256,6 +214,12 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
     pub fn add_supply(&mut self, node: usize, supply: F) {
         self.initial_excess[node] += supply;
         self.excess[node] += supply;
+    }
+
+    // it was usually between 8 and 24
+    pub fn set_alpha(&mut self, alpha: F) {
+        assert!(alpha >= F::from_i32(2).unwrap());
+        self.alpha = alpha;
     }
 
     pub fn set_check_feasibility(&mut self, check: bool) {
