@@ -61,7 +61,7 @@ macro_rules! impl_integral {
 
 impl_integral!(i8, i16, i32, i64, i128);
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum Status {
     NotSolved,
     Optimal,
@@ -195,6 +195,10 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         Edge { from: edge_id.0, to: e.to, flow: e.flow, lower: e.lower, upper: e.upper, cost: e.cost }
     }
 
+    pub fn get_potential(&self) -> Vec<F> {
+        self.potentials.clone()
+    }
+
     pub fn add_supply(&mut self, node: usize, supply: F) {
         self.initial_excess[node] += supply;
         self.excess[node] += supply;
@@ -212,6 +216,11 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
 
     pub fn solve(&mut self) -> Status {
         self.status = Status::NotSolved;
+
+        if self.num_of_nodes == 0 {
+            self.status = Status::Optimal;
+            return Status::Optimal;
+        }
 
         if self.is_unbalanced() {
             return Status::Unbalanced;
@@ -278,6 +287,8 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         self.optimal_cost = Some(cost / 2);
 
         self.status = Status::Optimal;
+        self.update_potential();
+
         Status::Optimal
     }
 
@@ -560,28 +571,34 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         false
     }
 
-    pub fn calculate_potential(&self) -> Vec<F> {
-        let mut p = vec![F::zero(); self.num_of_nodes];
-        // bellman-ford
-        // 最適flowに対して，残余ネットワーク上で最短経路問題を解く
-        for _ in 0..self.num_of_nodes {
-            let mut update = false;
-            for u in 0..self.num_of_nodes {
-                for e in &self.graph[u] {
-                    if e.residual_capacity() > F::zero() {
-                        let new_pot = p[u] + e.cost;
-                        if new_pot < p[e.to] {
-                            p[e.to] = new_pot;
-                            update = true;
-                        }
+    fn update_potential(&mut self) {
+        assert_eq!(self.status, Status::Optimal);
+        use std::collections::BinaryHeap;
+
+        self.potentials = vec![F::zero(); self.num_of_nodes];
+        let mut heap = BinaryHeap::new();
+
+        for u in 0..self.num_of_nodes {
+            heap.push((F::zero(), u));
+        }
+
+        while let Some((cost, u)) = heap.pop() {
+            if cost > self.potentials[u] {
+                continue;
+            }
+
+            for edge in &self.graph[u] {
+                if edge.residual_capacity() > F::zero() {
+                    let new_cost = cost + edge.cost;
+                    let v = edge.to;
+
+                    if new_cost < self.potentials[v] {
+                        heap.push((new_cost, v));
+                        self.potentials[v] = new_cost;
                     }
                 }
             }
-            if !update {
-                break;
-            }
         }
-        p
     }
 
     // debug

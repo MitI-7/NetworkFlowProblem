@@ -1,18 +1,12 @@
 // verification-helper: PROBLEM https://judge.yosupo.jp/problem/min_cost_b_flow
-use std::str::FromStr;
-use std::io::*;
 use cost_scaling_push_relabel::{CostScalingPushRelabel, Status};
-
+use std::io::*;
+use std::str::FromStr;
 
 fn read<T: FromStr>() -> T {
     let stdin = stdin();
     let stdin = stdin.lock();
-    let token: String = stdin
-        .bytes()
-        .map(|c| c.expect("failed to read char") as char)
-        .skip_while(|c| c.is_whitespace())
-        .take_while(|c| !c.is_whitespace())
-        .collect();
+    let token: String = stdin.bytes().map(|c| c.expect("failed to read char") as char).skip_while(|c| c.is_whitespace()).take_while(|c| !c.is_whitespace()).collect();
     token.parse().ok().expect("failed to parse token")
 }
 
@@ -38,7 +32,7 @@ fn main() {
     match status {
         Status::Optimal => {
             println!("{}", solver.optimal_cost().unwrap_or(0));
-            let p = solver.calculate_potential();
+            let p = solver.get_potential();
             for u in 0..n {
                 println!("{}", p[u]);
             }
