@@ -601,6 +601,43 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         }
     }
 
+    pub fn increase_capacity_unit(&mut self, edge_id: EdgeId) {
+        assert_eq!(self.status, Status::Optimal);
+        let (u, i) = (edge_id.0, edge_id.1);
+
+        self.graph[u][i].upper += F::one();
+        if self.graph[u][i].flow < self.graph[u][i].upper - F::one() {
+            return;
+        }
+
+        self.update_potential();
+
+        // it satisfies the reduced cost optimality conditions
+        if self.reduced_cost(u, &self.graph[u][i]) >= F::zero() {
+            return;
+        }
+
+        // 流量を上界にする
+        self.push_flow(u, i, F::one());
+        assert_eq!(self.graph[u][i].flow, self.graph[u][i].upper);
+
+        // find shortest path from v to u
+        let v = self.graph[u][i].to;
+    }
+
+    pub fn decrease_capacity(&mut self, edge_id: EdgeId) {
+        assert_eq!(self.status, Status::Optimal);
+        assert!(self.graph[edge_id.0][edge_id.1].upper >= F::one());
+
+        self.graph[edge_id.0][edge_id.1].upper -= F::one();
+
+        let edge = &self.graph[edge_id.0][edge_id.1];
+
+        if edge.flow <= edge.upper {
+            return;
+        }
+    }
+
     // debug
     fn print_excess(&self) {
         print!("excess: ");
