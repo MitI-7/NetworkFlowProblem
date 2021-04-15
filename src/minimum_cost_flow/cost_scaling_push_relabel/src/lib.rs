@@ -98,12 +98,11 @@ struct InternalEdge<F: Flow> {
     lower: F,
     upper: F,
     cost: F,
-    is_rev: bool, // 逆辺かどうか
 }
 
 impl<F: Flow> InternalEdge<F> {
-    pub fn new(to: usize, rev: usize, flow: F, lower: F, upper: F, cost: F, is_rev: bool) -> Self {
-        InternalEdge { to, rev, flow, lower, upper, cost, is_rev }
+    pub fn new(to: usize, rev: usize, flow: F, lower: F, upper: F, cost: F) -> Self {
+        InternalEdge { to, rev, flow, lower, upper, cost }
     }
 
     pub fn residual_capacity(&self) -> F {
@@ -122,6 +121,9 @@ pub struct CostScalingPushRelabel<F: Flow> {
     initial_excess: Vec<F>,
     excess: Vec<F>,
     potentials: Vec<F>,
+
+    // Edge
+    is_rev: Vec<Vec<bool>>, // TODO: remove
 
     // status
     status: Status,
@@ -153,6 +155,9 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             excess: vec![F::zero(); num_of_nodes],
             potentials: vec![F::zero(); num_of_nodes],
 
+            // Edge
+            is_rev: vec![vec![]; num_of_nodes],
+
             status: Status::NotSolved,
             optimal_cost: None,
 
@@ -175,11 +180,13 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         let e = self.graph[from].len();
         let re = if from == to { e + 1 } else { self.graph[to].len() };
 
-        let e1 = InternalEdge::new(to, re, F::zero(), lower, upper, cost, false);
+        let e1 = InternalEdge::new(to, re, F::zero(), lower, upper, cost);
         self.graph[from].push(e1);
+        self.is_rev[from].push(false);
 
-        let e2 = InternalEdge::new(from, e, F::zero(), F::zero(), -lower, -cost, true);
+        let e2 = InternalEdge::new(from, e, F::zero(), F::zero(), -lower, -cost);
         self.graph[to].push(e2);
+        self.is_rev[to].push(true);
 
         if cost < F::zero() {
             self.gamma = F::max(self.gamma, -cost);
@@ -287,7 +294,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         self.optimal_cost = Some(cost / 2);
 
         self.status = Status::Optimal;
-        self.update_potential();
+        // self.update_potential();
 
         Status::Optimal
     }
@@ -337,7 +344,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         for u in 0..self.num_of_nodes {
             for i in 0..self.graph[u].len() {
                 let edge = &self.graph[u][i];
-                if !edge.is_rev {
+                if !self.is_rev[u][i] {
                     solver.add_edge(u, edge.to, F::to_i64(&edge.lower).unwrap(), F::to_i64(&edge.upper).unwrap());
                 }
             }
@@ -354,10 +361,8 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         for u in 0..self.num_of_nodes {
             for i in 0..self.graph[u].len() {
                 let edge = &self.graph[u][i];
-                if !edge.is_rev {
-                    let flow = edge.lower;
-                    self.push_flow(u, i, flow);
-                }
+                let flow = edge.lower;
+                self.push_flow(u, i, flow);
             }
         }
     }
@@ -368,9 +373,6 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         for u in 0..self.num_of_nodes {
             for i in 0..self.graph[u].len() {
                 let edge = &self.graph[u][i];
-                if edge.is_rev {
-                    continue;
-                }
 
                 let reduced_cost = self.reduced_cost(u, &edge);
                 if reduced_cost < F::zero() {
@@ -380,13 +382,6 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
                         self.push_flow(u, i, flow);
                     }
                     assert_eq!(self.graph[u][i].flow, self.graph[u][i].upper);
-                } else if reduced_cost > F::zero() {
-                    // 流量を下界にする
-                    let flow = edge.lower - edge.flow;
-                    if flow != F::zero() {
-                        self.push_flow(u, i, flow);
-                    }
-                    assert_eq!(self.graph[u][i].flow, self.graph[u][i].lower);
                 }
             }
         }
@@ -571,7 +566,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         false
     }
 
-    fn update_potential(&mut self) {
+    pub fn update_potential(&mut self) {
         assert_eq!(self.status, Status::Optimal);
         use std::collections::BinaryHeap;
 
@@ -657,8 +652,9 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
 
     pub fn show(&self) {
         for u in 0..self.num_of_nodes {
-            for e in &self.graph[u] {
-                if !e.is_rev {
+            for i in 0..self.graph[u].len() {
+                let e = &self.graph[u][i];
+                if !self.is_rev[u][i] {
                     println!("{} -> {}(lower:{} flow:{} upper:{} cost:{} rest:{})", u, e.to, e.flow, e.flow, e.upper, e.cost, e.residual_capacity());
                 }
             }
@@ -669,8 +665,9 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         let mut e = vec![F::zero(); self.num_of_nodes];
         for u in 0..self.num_of_nodes {
             e[u] += self.initial_excess[u];
-            for edge in &self.graph[u] {
-                if !edge.is_rev {
+            for i in 0..self.graph[u].len() {
+                let edge = &self.graph[u][i];
+                if !self.is_rev[u][i] {
                     e[u] -= edge.flow;
                     e[edge.to] += edge.flow;
                 }
@@ -692,7 +689,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         for u in 0..self.num_of_nodes {
             for i in 0..self.graph[u].len() {
                 let edge = &self.graph[u][i];
-                if edge.is_rev {
+                if self.is_rev[u][i] {
                     continue;
                 }
 
@@ -720,8 +717,9 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
     fn is_feasible_flow(&self) -> bool {
         let mut e = vec![F::zero(); self.num_of_nodes];
         for u in 0..self.num_of_nodes {
-            for edge in &self.graph[u] {
-                if !edge.is_rev {
+            for i in 0..self.graph[u].len() {
+                let edge = &self.graph[u][i];
+                if !self.is_rev[u][i] {
                     // check capacity constraint
                     if edge.flow < edge.lower || edge.flow > edge.upper {
                         return false;
