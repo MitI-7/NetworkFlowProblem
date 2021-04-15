@@ -134,11 +134,6 @@ pub struct CostScalingPushRelabel<F: Flow> {
     cost_scaling_factor: F,
     check_feasibility: bool,
     use_look_ahead_heuristic: bool,
-
-    // debug
-    num_discharge: i64,
-    num_relabel: i64,
-    num_test: i64,
 }
 
 #[allow(dead_code)]
@@ -167,10 +162,6 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             cost_scaling_factor: F::from_i64(3 + num_of_nodes as i64).unwrap(),
             check_feasibility: true,
             use_look_ahead_heuristic: true,
-
-            num_discharge: 0,
-            num_relabel: 0,
-            num_test: 0,
         }
     }
 
@@ -276,10 +267,6 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             // eprintln!("#relabel:{}", self.num_relabel);
             // eprintln!("#discharge:{}", self.num_discharge);
             // eprintln!("#edge_test_count:{}", self.num_test);
-            eprintln!();
-            self.num_relabel = 0;
-            self.num_discharge = 0;
-            self.num_test = 0;
 
             // while
             self.status != Status::Infeasible && epsilon != F::one()
@@ -415,8 +402,6 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
     }
 
     fn discharge(&mut self, u: usize, epsilon: F) {
-        self.num_discharge += 1;
-
         while self.status != Status::Infeasible && self.is_active(u) {
             self.push(u, epsilon);
             if self.is_active(u) {
@@ -458,7 +443,6 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         assert!(self.is_active(u));
 
         for i in self.current_edges[u]..self.graph[u].len() {
-            self.num_test += 1;
             let edge = &self.graph[u][i];
             if edge.residual_capacity() <= F::zero() {
                 continue;
@@ -497,7 +481,6 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
 
     // uのpotentialを修正してadmissible edgeをふやす
     fn relabel(&mut self, u: usize, epsilon: F) {
-        self.num_relabel += 1;
         let guaranteed_new_potential = self.potentials[u] - epsilon;
 
         let mut maxi_potential = F::min_value();
@@ -505,12 +488,9 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         let mut current_edges_for_u = 0;
 
         for i in 0..self.graph[u].len() {
-            self.num_test += 1;
             if self.graph[u][i].residual_capacity() <= F::zero() {
                 continue;
             }
-            let to = self.graph[u][i].to;
-            let cost = self.graph[u][i].cost;
 
             // (u->to)のreduced_cost(= cost + potential[u] - potential[to])を0にするpotential
             let new_potential = self.potentials[to] - cost;
@@ -561,12 +541,12 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
 
         // admissibleがあればok
         for i in self.current_edges[u]..self.graph[u].len() {
-            self.num_test += 1;
-            if self.graph[u][i].residual_capacity() <= F::zero() {
+            let edge = &self.graph[u][i];
+            if edge.residual_capacity() <= F::zero() {
                 continue;
             }
 
-            if self.is_admissible(u, &self.graph[u][i], epsilon) {
+            if self.is_admissible(u, &edge, epsilon) {
                 self.current_edges[u] = i;
                 return true;
             }
@@ -587,6 +567,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             heap.push((F::zero(), u));
         }
 
+        // dijkstra
         while let Some((cost, u)) = heap.pop() {
             if cost > self.potentials[u] {
                 continue;
