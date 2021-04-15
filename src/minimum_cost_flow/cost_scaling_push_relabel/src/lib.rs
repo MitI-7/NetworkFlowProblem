@@ -487,13 +487,13 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         let mut previous_maxi_potential = F::min_value();
         let mut current_edges_for_u = 0;
 
-        for i in 0..self.graph[u].len() {
+        for (i, edge) in self.graph[u].iter().enumerate() {
             if self.graph[u][i].residual_capacity() <= F::zero() {
                 continue;
             }
 
             // (u->to)のreduced_cost(= cost + potential[u] - potential[to])を0にするpotential
-            let new_potential = self.potentials[to] - cost;
+            let new_potential = self.potentials[edge.to] - edge.cost;
             if new_potential > maxi_potential {
                 // epsilon引いただけでadmissible edgeができる
                 if new_potential > guaranteed_new_potential {
