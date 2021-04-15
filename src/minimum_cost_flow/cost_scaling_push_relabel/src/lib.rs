@@ -488,7 +488,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         let mut current_edges_for_u = 0;
 
         for (i, edge) in self.graph[u].iter().enumerate() {
-            if self.graph[u][i].residual_capacity() <= F::zero() {
+            if edge.residual_capacity() <= F::zero() {
                 continue;
             }
 
