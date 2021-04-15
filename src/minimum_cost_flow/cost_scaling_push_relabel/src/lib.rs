@@ -133,6 +133,7 @@ pub struct CostScalingPushRelabel<F: Flow> {
     alpha: F,
     cost_scaling_factor: F,
     check_feasibility: bool,
+    use_look_ahead_heuristic: bool,
 
     // debug
     num_discharge: i64,
@@ -165,6 +166,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             // cost_scaling_factor: 1 + alpha * num_of_nodes as i64,
             cost_scaling_factor: F::from_i64(3 + num_of_nodes as i64).unwrap(),
             check_feasibility: true,
+            use_look_ahead_heuristic: true,
 
             num_discharge: 0,
             num_relabel: 0,
@@ -219,6 +221,10 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
 
     pub fn set_check_feasibility(&mut self, check: bool) {
         self.check_feasibility = check;
+    }
+
+    pub fn use_look_ahead_heuristic(&mut self, b: bool) {
+        self.use_look_ahead_heuristic = b;
     }
 
     pub fn solve(&mut self) -> Status {
@@ -461,9 +467,12 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             if self.is_admissible(u, &edge, epsilon) {
                 let to = edge.to;
 
-                if !self.look_ahead(to, epsilon) {
-                    if !self.is_admissible(u, &self.graph[u][i], epsilon) {
-                        continue;
+                if self.use_look_ahead_heuristic {
+                    if !self.look_ahead(to, epsilon) {
+                        // toがrelabelしているので，edgeがadmissibleかチェックする
+                        if !self.is_admissible(u, &self.graph[u][i], epsilon) {
+                            continue;
+                        }
                     }
                 }
 
@@ -544,6 +553,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         }
     }
 
+    // check whether u has an outgoing admissible arc or whether excess[u] < 0
     fn look_ahead(&mut self, u: usize, epsilon: F) -> bool {
         if self.excess[u] < F::zero() {
             return true;
