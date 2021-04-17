@@ -254,15 +254,18 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
 
         self.initialize();
 
+        let mut num_loop = 0;
         loop {
+            num_loop += 1;
             epsilon = F::max(epsilon / self.alpha, F::one());
             eprintln!("epsilon: {}", epsilon);
 
-            // if self.use_price_refinement_heuristic {
-            if epsilon != F::one() && self.price_refinement(epsilon) {
-                continue;
+            if self.use_price_refinement_heuristic && num_loop > 1 && epsilon != F::one() {
+                if self.price_refinement(epsilon) {
+                    eprintln!("price refinment");
+                    continue;
+                }
             }
-            // }
 
             let start = Instant::now();
             self.refine(epsilon);
