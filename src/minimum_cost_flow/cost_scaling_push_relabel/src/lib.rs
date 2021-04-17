@@ -114,7 +114,7 @@ pub struct CostScalingPushRelabel<F: Flow> {
     num_of_nodes: usize,
     graph: Vec<Vec<InternalEdge<F>>>,
     active_nodes: VecDeque<usize>,
-    gamma: F,
+    gamma: F,                  // largest magnitude of any edge cost
     current_edges: Vec<usize>, // current candidate to test for admissibility
 
     // Node
@@ -134,6 +134,8 @@ pub struct CostScalingPushRelabel<F: Flow> {
     cost_scaling_factor: F,
     check_feasibility: bool,
     use_look_ahead_heuristic: bool,
+    use_price_update_heuristic: bool,
+    use_price_refinement_heuristic: bool,
 }
 
 #[allow(dead_code)]
@@ -162,6 +164,8 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             cost_scaling_factor: F::from_i64(3 + num_of_nodes as i64).unwrap(),
             check_feasibility: true,
             use_look_ahead_heuristic: true,
+            use_price_update_heuristic: false,
+            use_price_refinement_heuristic: false,
         }
     }
 
@@ -204,7 +208,6 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         self.excess[node] += supply;
     }
 
-    // it was usually between 8 and 24
     pub fn set_alpha(&mut self, alpha: F) {
         assert!(alpha >= F::from_i32(2).unwrap());
         self.alpha = alpha;
@@ -251,10 +254,15 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
 
         self.initialize();
 
-        while {
-            // do
-            eprintln!("epsilon: {}", epsilon);
+        loop {
             epsilon = F::max(epsilon / self.alpha, F::one());
+            eprintln!("epsilon: {}", epsilon);
+
+            // if self.use_price_refinement_heuristic {
+            if epsilon != F::one() && self.price_refinement(epsilon) {
+                continue;
+            }
+            // }
 
             let start = Instant::now();
             self.refine(epsilon);
@@ -264,13 +272,10 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             // assert!(self.is_feasible_flow());
             // assert!(self.is_epsilon_optimal(0, true));
 
-            // eprintln!("#relabel:{}", self.num_relabel);
-            // eprintln!("#discharge:{}", self.num_discharge);
-            // eprintln!("#edge_test_count:{}", self.num_test);
-
-            // while
-            self.status != Status::Infeasible && epsilon != F::one()
-        } {}
+            if self.status == Status::Infeasible || epsilon == F::one() {
+                break;
+            }
+        }
 
         self.unscale_cost();
 
@@ -556,6 +561,109 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         false
     }
 
+    // check whether now flow is epsilon-optimal or not
+    // o(nm)
+    fn price_refinement(&mut self, epsilon: F) -> bool {
+        let mut p = vec![F::zero(); self.num_of_nodes];
+
+        // bellman-ford
+        let mut update = false;
+        for _ in 0..self.num_of_nodes {
+            for u in 0..self.num_of_nodes {
+                for edge in self.graph[u].iter() {
+                    if edge.residual_capacity() > F::zero() {
+                        let new_pot = p[u] + edge.cost + epsilon;
+                        if new_pot < p[edge.to] {
+                            p[edge.to] = new_pot;
+                            update = true;
+                        }
+                    }
+                }
+            }
+            if !update {
+                break;
+            }
+        }
+
+        // have negative cycle
+        if update {
+            return false;
+        }
+
+        // update potential
+        for u in 0..self.num_of_nodes {
+            self.potentials[u] = p[u];
+        }
+        true
+    }
+
+    fn price_update(&mut self, epsilon: F) {
+        let inf = self.num_of_nodes;
+
+        // deficit nodesからadmissible edgesを逆にたどって到達できるnodesを求める
+        // そのとき，何stepで到達できるかをメモしておく
+        let mut buckets = vec![Vec::new(); self.num_of_nodes + 10];
+        let mut belonging_bucket = vec![inf; self.num_of_nodes + 10];
+        let mut total_s = F::zero();
+
+        for u in 0..self.num_of_nodes {
+            if self.excess[u] < F::zero() {
+                buckets[0].push(u);
+                belonging_bucket[u] = 0;
+                total_s += self.excess[u];
+            }
+        }
+
+        let mut in_s = vec![false; self.num_of_nodes + 10];
+        let mut labels = vec![inf; self.num_of_nodes + 10];
+        let mut last = 0;
+        let mut i = 0;
+        while total_s < F::zero() {
+            if i >= buckets.len() {
+                break;
+            }
+            while let Some(v) = buckets[i].pop() {
+                // v is deleted
+                if belonging_bucket[v] != i {
+                    continue;
+                }
+
+                for edge in &self.graph[v] {
+                    let u = edge.to;
+                    if in_s[u] {
+                        continue;
+                    }
+
+                    let rev_edge = &self.graph[u][edge.rev]; // u -> v
+                    let mut new_distance: usize = F::to_usize(&(self.reduced_cost(u, rev_edge) / epsilon + F::one())).unwrap();
+                    new_distance = usize::min(usize::max(new_distance, 1), inf);
+                    if new_distance < belonging_bucket[u] {
+                        belonging_bucket[u] = new_distance;
+                        buckets[new_distance].push(u);
+                    }
+                }
+
+                in_s[v] = true;
+                labels[v] = i;
+                total_s += self.excess[v];
+
+                last = i;
+            }
+            i += 1;
+        }
+
+        // update potentials
+        for u in 0..self.num_of_nodes {
+            if labels[u] < inf {
+                self.current_edges[u] = 0;
+                self.potentials[u] -= epsilon * F::from_usize(labels[u]).unwrap();
+            } else {
+                self.current_edges[u] = 0;
+                self.potentials[u] -= epsilon * F::from_usize(last + 1).unwrap();
+            }
+        }
+    }
+
     pub fn update_potential(&mut self) {
         assert_eq!(self.status, Status::Optimal);
         use std::collections::BinaryHeap;
@@ -568,6 +676,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
         }
 
         // dijkstra
+        // optimal flow does not have negative cycle in residual network
         while let Some((cost, u)) = heap.pop() {
             if cost > self.potentials[u] {
                 continue;
