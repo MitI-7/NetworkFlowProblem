@@ -225,7 +225,7 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
     pub fn solve(&mut self) -> Status {
         self.status = Status::NotSolved;
 
-        self.cost_scaling_factor = F::from_usize(self.alpha * self.num_of_nodes).unwrap();
+        self.cost_scaling_factor = self.alpha * F::from_usize(self.num_of_nodes).unwrap();
 
         if self.num_of_nodes == 0 {
             self.status = Status::Optimal;
@@ -609,6 +609,51 @@ impl<F: Flow + std::ops::Neg<Output = F>> CostScalingPushRelabel<F> {
             self.potentials[u] = p[u];
         }
         true
+    }
+
+    fn price_update_naive(&mut self, epsilon: F) {
+        let mut s = Vec::new();
+        let mut in_s = vec![false; self.num_of_nodes];
+        let mut total_s = F::zero();
+        for u in 0..self.num_of_nodes {
+            if self.excess[u] < F::zero() {
+                s.push(u);
+                in_s[u] = true;
+                total_s += self.excess[u];
+            }
+        }
+
+        while total_s < F::zero() {
+            let mut new_s = Vec::new();
+            for v in &s {
+                for edge in &self.graph[*v] {
+                    let u = edge.to;
+                    if in_s[u] {
+                        continue;
+                    }
+                    let rev_edge = &self.graph[u][edge.rev]; // u -> v
+                    if self.is_admissible(u, rev_edge, epsilon) {
+                        new_s.push(u);
+                        in_s[u] = true;
+                        total_s += self.excess[u];
+                    }
+                }
+            }
+
+            if total_s < F::zero() {
+                break;
+            }
+
+            for u in 0..self.num_of_nodes {
+                if !in_s[u] {
+                    self.potentials[u] -= epsilon;
+                }
+            }
+
+            for u in new_s {
+                s.push(u);
+            }
+        }
     }
 
     fn price_update(&mut self, epsilon: F) {

@@ -32,6 +32,7 @@ fn main() {
     match status {
         Status::Optimal => {
             println!("{}", solver.optimal_cost().unwrap_or(0));
+            solver.update_potential();
             let p = solver.get_potential();
             for u in 0..n {
                 println!("{}", p[u]);
